@@ -9,6 +9,8 @@ struct TableView: View {
     @State private var actionTarget: SessionPlayer?
     @State private var rebuyTarget: SessionPlayer?
     @State private var rebuyAmountText = ""
+    /// Set when the rebuy sheet is correcting an existing rebuy instead of adding one.
+    @State private var editingRebuy: BuyInEvent?
     @State private var editBuyInsTarget: SessionPlayer?
     @State private var navigateToSettleUp: SessionPlayer?
     @State private var navigateToEndGame = false
@@ -80,6 +82,7 @@ struct TableView: View {
                     }
                 } else {
                     Button("Add Rebuy") {
+                        editingRebuy = nil
                         rebuyAmountText = session.defaultBuyInAmount.map { "\($0)" } ?? ""
                         rebuyTarget = target
                     }
@@ -87,17 +90,29 @@ struct TableView: View {
                         navigateToSettleUp = target
                     }
                 }
+                if let lastRebuy = lastRebuy(of: target) {
+                    Button("Edit Last Rebuy") {
+                        editingRebuy = lastRebuy
+                        rebuyAmountText = "\(lastRebuy.amount)"
+                        rebuyTarget = target
+                    }
+                }
                 Button("Edit Buy-ins") {
                     editBuyInsTarget = target
                 }
             }
         }
-        .sheet(item: $rebuyTarget) { target in
+        .sheet(item: $rebuyTarget, onDismiss: { editingRebuy = nil }) { target in
             RebuySheet(
                 playerName: target.player?.name ?? "Player",
+                isEditing: editingRebuy != nil,
                 amountText: $rebuyAmountText,
                 onAdd: {
-                    addRebuy(to: target)
+                    if let rebuy = editingRebuy {
+                        updateRebuy(rebuy)
+                    } else {
+                        addRebuy(to: target)
+                    }
                     rebuyTarget = nil
                 },
                 onCancel: {
@@ -178,6 +193,18 @@ struct TableView: View {
         modelContext.insert(event)
         sessionPlayer.buyIns.append(event)
     }
+
+    private func lastRebuy(of sessionPlayer: SessionPlayer) -> BuyInEvent? {
+        sessionPlayer.buyIns
+            .filter { $0.type == .rebuy }
+            .max { $0.timestamp < $1.timestamp }
+    }
+
+    private func updateRebuy(_ rebuy: BuyInEvent) {
+        let amount = Decimal(string: rebuyAmountText) ?? 0
+        guard amount > 0 else { return }
+        rebuy.amount = amount
+    }
 }
 
 private struct SeatView: View {
@@ -227,6 +254,7 @@ private struct SeatView: View {
 
 private struct RebuySheet: View {
     let playerName: String
+    var isEditing = false
     @Binding var amountText: String
     let onAdd: () -> Void
     let onCancel: () -> Void
@@ -241,14 +269,14 @@ private struct RebuySheet: View {
                 .listRowBackground(Color.cardSurface)
             }
             .themedForm()
-            .navigationTitle("Add Rebuy")
+            .navigationTitle(isEditing ? "Edit Rebuy" : "Add Rebuy")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add", action: onAdd)
+                    Button(isEditing ? "Save" : "Add", action: onAdd)
                         .disabled((Decimal(string: amountText) ?? 0) <= 0)
                 }
             }

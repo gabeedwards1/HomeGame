@@ -376,6 +376,50 @@ final class Home_GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testLowerRebuyFromTwentyToTen() throws {
+        let app = launchApp()
+
+        app.buttons["New Game"].tap()
+        XCTAssertTrue(app.navigationBars["Chip & Blind Setup"].waitForExistence(timeout: 5))
+        setUpChipsAndBlinds(app: app)
+        app.buttons["Continue"].tap()
+
+        XCTAssertTrue(app.navigationBars["Add Players"].waitForExistence(timeout: 5))
+        addPlayer(app: app, name: "Gabe", amount: "20")
+        addPlayer(app: app, name: "Sam", amount: "20")
+        app.buttons["Continue"].tap()
+        XCTAssertTrue(app.navigationBars["Review"].waitForExistence(timeout: 5))
+        app.buttons["Start Game"].tap()
+        XCTAssertTrue(app.navigationBars["Table"].waitForExistence(timeout: 5))
+
+        // Gabe buys in for 20, then rebuys for another 20
+        app.staticTexts["Gabe"].tap()
+        app.buttons["Add Rebuy"].tap()
+        XCTAssertTrue(app.navigationBars["Add Rebuy"].waitForExistence(timeout: 5))
+        let rebuyField = app.textFields["Amount"]
+        rebuyField.tap()
+        rebuyField.typeText("20")
+        app.buttons["Add"].tap()
+        XCTAssertTrue(app.staticTexts["$40.00"].waitForExistence(timeout: 5))
+
+        // The rebuy is already confirmed, then he changes his mind and only wants 10
+        app.staticTexts["Gabe"].tap()
+        XCTAssertTrue(app.buttons["Edit Last Rebuy"].waitForExistence(timeout: 5))
+        app.buttons["Edit Last Rebuy"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Rebuy"].waitForExistence(timeout: 5))
+        let editField = app.textFields["Amount"]
+        XCTAssertEqual(editField.value as? String, "20", "Should open pre-filled with the confirmed rebuy")
+        editField.tap()
+        editField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2))
+        editField.typeText("10")
+        app.buttons["Save"].tap()
+
+        XCTAssertTrue(app.navigationBars["Table"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["$30.00"].waitForExistence(timeout: 5), "20 initial + 10 rebuy = 30")
+        XCTAssertTrue(app.staticTexts["+1 rebuy"].exists, "Editing should not add a second rebuy")
+    }
+
+    @MainActor
     func testMidGameSettleUpAndStillPlayingBanner() throws {
         let app = launchApp()
 
