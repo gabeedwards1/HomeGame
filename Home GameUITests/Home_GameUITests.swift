@@ -317,6 +317,65 @@ final class Home_GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testEditRebuyAmountOnTable() throws {
+        let app = launchApp()
+
+        app.buttons["New Game"].tap()
+        XCTAssertTrue(app.navigationBars["Chip & Blind Setup"].waitForExistence(timeout: 5))
+        setUpChipsAndBlinds(app: app)
+        app.buttons["Continue"].tap()
+
+        XCTAssertTrue(app.navigationBars["Add Players"].waitForExistence(timeout: 5))
+        addPlayer(app: app, name: "Gabe", amount: "20")
+        addPlayer(app: app, name: "Sam", amount: "20")
+        app.buttons["Continue"].tap()
+        XCTAssertTrue(app.navigationBars["Review"].waitForExistence(timeout: 5))
+        app.buttons["Start Game"].tap()
+        XCTAssertTrue(app.navigationBars["Table"].waitForExistence(timeout: 5))
+
+        // Gabe rebuys for 20, but he actually put 50 on the table
+        app.staticTexts["Gabe"].tap()
+        app.buttons["Add Rebuy"].tap()
+        XCTAssertTrue(app.navigationBars["Add Rebuy"].waitForExistence(timeout: 5))
+        let rebuyField = app.textFields["Amount"]
+        rebuyField.tap()
+        rebuyField.typeText("20")
+        app.buttons["Add"].tap()
+        XCTAssertTrue(app.staticTexts["$40.00"].waitForExistence(timeout: 5))
+
+        // Correct the rebuy itself -- testEditBuyInsOnTable only ever edits the initial
+        // buy-in at the top of the list, never the rebuy row.
+        app.staticTexts["Gabe"].tap()
+        app.buttons["Edit Buy-ins"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Buy-ins"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Rebuy 1"].waitForExistence(timeout: 5))
+
+        let buyInFields = app.textFields.matching(identifier: "Amount")
+        XCTAssertEqual(buyInFields.count, 2)
+        let rebuyRowField = buyInFields.element(boundBy: 1)
+        XCTAssertEqual(rebuyRowField.value as? String, "20", "Rebuy row should show its stored amount")
+
+        rebuyRowField.doubleTap()
+        rebuyRowField.typeText("50")
+        XCTAssertEqual(rebuyRowField.value as? String, "50", "Typing in the rebuy row must stick, not snap back to 20")
+
+        // Tap Done straight from the keyboard: the decimal pad has no return key, so
+        // the edit has to have been committed as it was typed.
+        app.buttons["Done"].tap()
+
+        XCTAssertTrue(app.navigationBars["Table"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["$70.00"].waitForExistence(timeout: 5), "20 initial + 50 corrected rebuy = 70")
+
+        // The correction should survive reopening the sheet
+        app.staticTexts["Gabe"].tap()
+        app.buttons["Edit Buy-ins"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Buy-ins"].waitForExistence(timeout: 5))
+        let reopened = app.textFields.matching(identifier: "Amount").element(boundBy: 1)
+        XCTAssertEqual(reopened.value as? String, "50", "Corrected rebuy amount should persist")
+        app.buttons["Done"].tap()
+    }
+
+    @MainActor
     func testMidGameSettleUpAndStillPlayingBanner() throws {
         let app = launchApp()
 

@@ -301,11 +301,13 @@ private struct EditBuyInsSheet: View {
     }
 
     private func removeBuyIns(at offsets: IndexSet) {
-        guard sortedBuyIns.count - offsets.count >= 1 else { return }
-        for index in offsets {
-            let event = sortedBuyIns[index]
-            modelContext.delete(event)
+        // Snapshot first: `sortedBuyIns` is computed, so it reshuffles after each
+        // delete and the remaining offsets would point at the wrong rows.
+        let snapshot = sortedBuyIns
+        guard snapshot.count - offsets.count >= 1 else { return }
+        for event in offsets.compactMap({ $0 < snapshot.count ? snapshot[$0] : nil }) {
             sessionPlayer.buyIns.removeAll { $0.id == event.id }
+            modelContext.delete(event)
         }
     }
 }
@@ -313,23 +315,49 @@ private struct EditBuyInsSheet: View {
 private struct BuyInEventRow: View {
     @Bindable var event: BuyInEvent
     let label: String
-    @State private var amountText = ""
+
+    /// What the user is currently typing. `nil` means "show the stored amount".
+    ///
+    /// The field used to be backed by plain `@State` seeded in `onAppear`. Form rows
+    /// can re-run `onAppear` when the list re-materialises them (e.g. the bottom row,
+    /// usually a rebuy, scrolling under the keyboard), which overwrites whatever was
+    /// typed with the stored amount. Falling back to the model unless a draft is in
+    /// flight makes the row safe to re-render at any moment.
+    @State private var draft: String?
+    @FocusState private var isFocused: Bool
+
+    private var amountText: Binding<String> {
+        Binding(
+            get: { draft ?? "\(event.amount)" },
+            set: { newValue in
+                draft = newValue
+                // Commit per keystroke: the decimal pad has no return key, so waiting
+                // for a commit event would lose the edit when "Done" closes the sheet.
+                if let amount = Decimal(string: newValue), amount > 0 {
+                    event.amount = amount
+                }
+            }
+        )
+    }
 
     var body: some View {
         HStack {
             Text(label)
             Spacer()
-            TextField("Amount", text: $amountText)
+            TextField("Amount", text: amountText)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 80)
-                .onChange(of: amountText) { _, newValue in
-                    guard let amount = Decimal(string: newValue) else { return }
-                    event.amount = amount
-                }
+                .focused($isFocused)
         }
-        .onAppear {
-            amountText = "\(event.amount)"
+        // Drop the draft on blur so a half-typed or empty entry snaps back to the
+        // stored amount instead of lingering, and on identity change so a recycled
+        // row never shows the previous event's text.
+        .onChange(of: isFocused) { _, focused in
+            if !focused { draft = nil }
+        }
+        .onChange(of: event.id) { _, _ in
+            draft = nil
         }
     }
 }
